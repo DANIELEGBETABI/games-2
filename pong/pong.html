@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Pong Game</title>
+	<style type="text/css">
+	canvas {
+		display: block;
+		position: absolute;
+		margin: auto;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+	}
+
+	</style>
+</head>
+<body>
+<script type="text/javascript">
+	// Constants
+	var WIDTH=700, HEIGHT=600, pi=Math.PI;
+	// KeyCodes
+	var UpArrow = 38, DownArrow = 40;
+	// Game objects
+	var canvas, ctx, keystate;
+	var player, ai, ball;
+
+	// Set properties for game objects
+	player = {
+		x: null,
+		y: null,
+		width: 20,
+		height: 100,
+
+		update: function() {
+			if (keystate[UpArrow]) this.y -= 7;
+			if (keystate[DownArrow]) this.y += 7;
+			this.y = Math.max(Math.min(this.y, HEIGHT - this.height), 0);
+		},
+		// Draw player racket as rectangle
+		draw: function() {
+			ctx.fillRect(this.x, this.y, this.width, this.height);
+		}
+	};
+	ai = {
+		x: null,
+		y: null,
+		width: 20,
+		height: 100,
+
+		update: function() {
+			// Makes ai racket follow the ball movement
+			var desty = ball.y - (this.height - ball.side)/2;
+			// Creates an inaccuracy
+			this.y += (desty - this.y) * 0.1;
+			this.y = Math.max(Math.min(this.y, HEIGHT - this.height), 0);
+		},
+		// Draw ai racket as rectangle
+		draw: function() {
+			ctx.fillRect(this.x, this.y, this.width, this.height);
+		}
+	};
+	ball = {
+		x: null,
+		y: null,
+		vel: null, // velocity
+		side: 20,
+		speed: 11,
+
+		serve: function(side) {
+			// Randomize initial ball position and direction
+			var r = Math.random();
+			this.x = side === 1 ? player.x + player.width : ai.x - this.side;
+			this.y = (HEIGHT - this.side)*r;
+
+			var phi = 0.1*pi*(1 - 2*r);
+			this.vel = {
+				x: side*this.speed*Math.cos(phi),
+				y: this.speed*Math.sin(phi)
+			}
+		},
+
+		update: function() {
+			this.x += this.vel.x;
+			this.y += this.vel.y;
+
+			// Reverce the velocity, makes the ball bounce from the border
+			if (0 > this.y || this.y+this.side > HEIGHT) {
+				// Create an offset to prevent ball from ecxeeding the border
+				var offset = this.vel.y < 0 ? 0 - this.y : HEIGHT - (this.y + this.side);
+				// Make the bounce more elastic
+				this.y += 2*offset;
+				this.vel.y *= -1;
+			}
+
+			// Check if ball hits rackets
+			var AABBIntersect = function(ax, ay, aw, ah, bx, by, bw, bh) {
+				return ax < bx + bw && ay < by + bh && bx < ax + aw && by < ay + ah;
+			};
+
+			// We will be intrested in left racket if ball goes left or right if ball goes right
+			var pdle = this.vel.x < 0 ? player : ai;
+			// Reverse the ball velocity if it intersects with racket  
+			if (AABBIntersect(pdle.x, pdle.y, pdle.width, pdle.height,
+				this.x, this.y, this.side, this.side)
+			) {
+				this.x = pdle === player ? player.x + player.width : ai.x - this.side;
+				// Value of offset from the center of the racket
+				var n = (this.y + this.side - pdle.y)/(pdle.height + this.side);
+				// pi/4 = 45deg reflection angle
+				var phi = 0.25*pi*(2*n - 1);
+
+				// Possibility of smashing the ball with side of racket
+				var smash = Math.abs(phi) > 0.2*pi ? 1.5:1;
+				this.vel.x = smash*(pdle === player ? 1 : -1)*this.speed*Math.cos(phi);
+				this.vel.y = smash*this.speed*Math.sin(phi);
+			}
+
+			// Reset if ball crosses the border of canvas
+			if (0 > this.x + this.side || this.x > WIDTH) {
+				this.serve(pdle === player ? 1 : -1);
+			}
+		},
+		// Draw ball as square
+		draw: function() {
+			ctx.fillRect(this.x, this.y, this.side, this.side);
+		}
+	};
+
+	function main() {
+		// Create and put canvas on the page
+		canvas = document.createElement("canvas");
+		canvas.width = WIDTH;
+		canvas.height = HEIGHT;
+		ctx = canvas.getContext("2d");
+		document.body.appendChild(canvas);
+
+		keystate = {};
+		// Create a state on keydown to perform an action
+		document.addEventListener("keydown", function(evt) {
+			keystate[evt.keyCode] = true;
+		});
+		// Delete this state on keyup
+		document.addEventListener("keyup", function(evt) {
+			delete keystate[evt.keyCode];
+		});
+
+		// Place all game objects on a game board
+		init();
+
+		var loop = function() {
+			// Update and draw new frame
+			update();
+			draw();
+
+			window.requestAnimationFrame(loop, canvas);
+		};
+		window.requestAnimationFrame(loop, canvas);
+	}
+
+	function init() {
+		// Set the initial coordinates for game objects
+		player.x = player.width;
+		player.y = (HEIGHT - player.height)/2;
+
+		ai.x = WIDTH - (player.width + ai.width);
+		ai.y = (HEIGHT - ai.height)/2;
+
+		// Initial direction of the ball
+		ball.serve(1);
+	}
+
+	function update() {
+		player.update();
+		ai.update();
+		ball.update();
+	}
+
+	function draw() {
+		// Make the black background
+		ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+		// Save and restore to preserve original coordinate system
+		ctx.save();
+
+		// Draw game objects in white
+		ctx.fillStyle = "#fff";
+		player.draw();
+		ai.draw();
+		ball.draw();
+
+		// Draw the net
+		var w = 4; // width
+		var x = (WIDTH - w)*0.5; // center of the screen
+		var y = 0; // start of drawing dotted line
+		var step = HEIGHT/15;
+		while (y < HEIGHT) {
+			ctx.fillRect(x, y+step*0.25, w, step*0.5);
+			y += step;
+		}
+
+		ctx.restore();
+	}
+	main();
+</script>
+</body>
+</html>
